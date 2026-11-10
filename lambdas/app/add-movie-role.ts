@@ -2,10 +2,14 @@ import type { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import { TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import { actorKey, ddb, movieKey, type Role, tableName } from "../shared/db";
 import { isResponse, parseJsonObject, response } from "../shared/http";
+import { logRequest } from "../shared/request-logger";
 
+// POST /movies/roles  { movieId, actorId, roleName, roleDescription }
 export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
+  logRequest(event);
+
   const body = parseJsonObject(event);
   if (isResponse(body)) return body;
 
@@ -17,13 +21,30 @@ export const handler = async (
   };
 
   try {
-    //  TOD∏O - Add role if its IDs are valid
+    // As in Lab 5, an all or nothing transaction: the role is only written
+    // if the ConditionCheck confirms the movie exists.
+    await ddb.send(
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            ConditionCheck: {
+              TableName: tableName,
+              Key: { PK: movieKey(role.movieId), SK: movieKey(role.movieId) },
+              ConditionExpression: "attribute_exists(PK)",
+            },
+          },
+          {
+            Put: {
+              TableName: tableName,
+              Item: { PK: movieKey(role.movieId), SK: actorKey(role.actorId), ...role },
+            },
+          },
+        ],
+      })
+    );
     return response(201, { message: "Role added", data: role });
   } catch (err) {
     console.error("DynamoDB error:", err);
-    return response(500, {
-      message: "Internal server error",
-      error: err,
-    });
+    return response(500, { message: "Internal server error" });
   }
 };
