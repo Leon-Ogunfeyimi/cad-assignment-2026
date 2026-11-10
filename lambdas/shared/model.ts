@@ -28,6 +28,9 @@ export interface Role {
   roleDescription: string;
 }
 
+// An actor's profile, plus their role description when a movie is specified.
+export type ActorProfile = Actor & Partial<Pick<Role, 'roleDescription'>>;
+
 export const isMovieItem = (item: Record<string, unknown>) =>
   typeof item.SK === 'string' && item.SK.startsWith('m#');
 export const isRoleItem = (item: Record<string, unknown>) =>

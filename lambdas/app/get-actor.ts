@@ -1,15 +1,19 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import { GetCommand } from "@aws-sdk/lib-dynamodb";
 import {
+  type ActorProfile,
   actorKey,
   ddb,
+  movieKey,
   parseId,
   tableName,
   toActor,
+  toRole,
 } from "../shared/db";
 import { response } from "../shared/http";
 import { logRequest } from "../shared/request-logger";
 
+// GET /actors/{actorID}?[movie=movieID]
 export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
@@ -36,8 +40,21 @@ export const handler = async (
     if (!actorResult.Item) {
       return response(404, { message: `Actor ${actorId} not found` });
     }
-    const actor = toActor(actorResult.Item);
-    return response(200, { data: actor });
+    const profile: ActorProfile = toActor(actorResult.Item);
+
+    if (movieId !== undefined) {
+      // A role item is keyed by movie (PK) and actor (SK).
+      const roleResult = await ddb.send(
+        new GetCommand({
+          TableName: tableName,
+          Key: { PK: movieKey(movieId), SK: actorKey(actorId) },
+        })
+      );
+      if (roleResult.Item) {
+        profile.roleDescription = toRole(roleResult.Item).roleDescription;
+      }
+    }
+    return response(200, { data: profile });
   } catch (err) {
     console.error("DynamoDB error:", err);
     return response(500, { message: "Internal server error", error: err });
