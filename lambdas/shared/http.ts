@@ -27,3 +27,9 @@ export const parseJsonObject = (
   }
   return body as Record<string, unknown>;
 };
+
+// Logs the real error to CloudWatch but never sends its details to the client.
+export const serverError = (err: unknown): APIGatewayProxyResult => {
+  console.error('Unexpected error:', err);
+  return response(500, { message: 'Internal server error' });
+};

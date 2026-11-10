@@ -10,7 +10,12 @@ import {
   tableName,
   toRole,
 } from "../shared/db";
-import { isResponse, parseJsonObject, response } from "../shared/http";
+import {
+  isResponse,
+  parseJsonObject,
+  response,
+  serverError,
+} from "../shared/http";
 import { logRequest } from "../shared/request-logger";
 
 // The response for each failed condition, in the same order as TransactItems below.
@@ -80,7 +85,6 @@ export const handler = async (
         return response(status, { message });
       }
     }
-    console.error("DynamoDB error:", err);
-    return response(500, { message: "Internal server error" });
+    return serverError(err);
   }
 };

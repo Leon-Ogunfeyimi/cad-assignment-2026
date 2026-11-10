@@ -10,7 +10,7 @@ import {
   toActor,
   toRole,
 } from "../shared/db";
-import { response } from "../shared/http";
+import { response, serverError } from "../shared/http";
 import { logRequest } from "../shared/request-logger";
 
 // GET /actors/{actorID}?[movie=movieID]
@@ -29,6 +29,7 @@ export const handler = async (
   if (movieParam !== undefined && movieId === undefined) {
     return response(400, { message: "movie must be a positive integer" });
   }
+
   try {
     const actorResult = await ddb.send(
       new GetCommand({
@@ -36,7 +37,6 @@ export const handler = async (
         Key: { PK: actorKey(actorId), SK: actorKey(actorId) },
       })
     );
-
     if (!actorResult.Item) {
       return response(404, { message: `Actor ${actorId} not found` });
     }
@@ -56,8 +56,6 @@ export const handler = async (
     }
     return response(200, { data: profile });
   } catch (err) {
-    // Log the details to CloudWatch, but never send them to the client.
-    console.error("DynamoDB error:", err);
-    return response(500, { message: "Internal server error" });
+    return serverError(err);
   }
 };
