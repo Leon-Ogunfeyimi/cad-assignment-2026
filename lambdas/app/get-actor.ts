@@ -56,7 +56,8 @@ export const handler = async (
     }
     return response(200, { data: profile });
   } catch (err) {
+    // Log the details to CloudWatch, but never send them to the client.
     console.error("DynamoDB error:", err);
-    return response(500, { message: "Internal server error", error: err });
+    return response(500, { message: "Internal server error" });
   }
 };

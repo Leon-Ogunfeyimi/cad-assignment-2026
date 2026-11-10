@@ -3,6 +3,7 @@ import { QueryCommand, type QueryCommandInput } from "@aws-sdk/lib-dynamodb";
 import {
   actorKey,
   ddb,
+  isMovieItem,
   isRoleItem,
   movieKey,
   parseId,
@@ -49,14 +50,21 @@ export const handler = async (
 
   try {
     const queryResult = await ddb.send(new QueryCommand(queryInput));
-
     const resultItems = queryResult.Items ?? [];
+
+    if (actorId !== undefined && resultItems.length === 0) {
+      return response(404, {
+        message: `No role found for actor ${actorId} in movie ${movieId}`,
+      });
+    }
+    // Without ?actor= the movie item itself is in the partition, if the movie exists.
+    if (actorId === undefined && !resultItems.some(isMovieItem)) {
+      return response(404, { message: `Movie ${movieId} not found` });
+    }
     return response(200, { data: resultItems.filter(isRoleItem).map(toRole) });
   } catch (err) {
+    // Log the details to CloudWatch, but never send them to the client.
     console.error("DynamoDB error:", err);
-    return response(500, {
-      message: "Internal server error",
-      error: err,
-    });
+    return response(500, { message: "Internal server error" });
   }
 };
