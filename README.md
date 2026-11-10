@@ -54,7 +54,7 @@ This application's domain data model comprises two entities, Movie and Actor, an
 
 #### DynamoDB table design.
 
-The application's database will follow the *Single-table* design pattern. This means:
+The application's database will follow the *Single-table* design pattern. This means:
 + One table stores all the data (movies, actors and roles).
 + A table item could represent an entity (e.g. movie) or a relationship between entities (e.g. role). 
 
@@ -68,9 +68,9 @@ Sample table items are as follows:
 + A movie:
    + m#1234 | m#1234 | 1234 | The Shawshank Redemption | 05-03-1995 | A banker convicted of uxoricide forms a friendship over a quarter century with a hardened convict …
 + Actor:
-   + a#4321 | a#4321 | 4321 | Morgan Freeman | 01-06-1937 |  An American actor, producer, and narrator. In a career spanning six decades, he has received numerous accolades, including an Academy Award and a Golden Globe Award, as well as ........
+   + a#4321 | a#4321 | 4321 | Morgan Freeman | 01-06-1937 |  An American actor, producer, and narrator. In a career spanning six decades, he has received numerous accolades, including an Academy Award and a Golden Globe Award, as well as ........
 + Role:
-    + m#1234 | a#4321 | 1234 | 4321 | Ellis Boyd "Red" Redding  |  Serves as the film's narrator, deuteragonist, and emotional anchor. As a seasoned inmate serving a life sentence, Red is the "man who can get things," a contraband smuggler who becomes the best friend and protector of ....
+    + m#1234 | a#4321 | 1234 | 4321 | Ellis Boyd "Red" Redding  |  Serves as the film's narrator, deuteragonist, and emotional anchor. As a seasoned inmate serving a life sentence, Red is the "man who can get things," a contraband smuggler who becomes the best friend and protector of ....
 
 #### Stack Architecture.
 
@@ -133,3 +133,76 @@ The application should log all user requests to CloudWatch logs. A log entry sho
      1. Refactor at each stage to improve code quality, e.g. DRY, variable naming, redundant debugging code, etc.
 
 [moodle]: https://moodle.setu.ie/mod/assign/view.php?id=4868989
+
+---
+
+## My implementation
+
+I followed the strategy suggested above: GETs first, then GET error handling, then authentication and logging, then the POST and its error handling, then the API key, and finally some refactoring. Each of these is its own commit in the Git log.
+
+### How to deploy
+
+```
+npm install
+cdk deploy --all
+```
+
+This deploys two stacks: `CognitoStack` (user pool + Auth API) and `AppApiStack` (the movies API + DynamoDB table). The API URLs are printed in the outputs at the end.
+
+### How to log in
+
+**Users:** use the Auth API to sign up, confirm with the code Cognito emails you, then sign in.
+
+- `POST /auth/signup` - `{ "username", "password", "email" }`
+- `POST /auth/confirm_signup` - `{ "username", "code" }`
+- `POST /auth/signin` - `{ "username", "password" }` - returns a token
+- `POST /auth/signout`
+
+Send the token to the App API in a cookie header: `Cookie: token=<token>`
+
+**Admin:** the API key is created by API Gateway when the stack is deployed. The deploy output shows its ID (`AdminApiKeyId`). To get the actual key:
+
+```
+aws apigateway get-api-key --api-key <AdminApiKeyId> --include-value --query value --output text
+```
+
+Send it in a header: `x-api-key: <key>`
+
+### Endpoints
+
+#### GET /movies/{movieID}/roles?[actor=actorID]
+Needs a signed-in user.
+- `200` - all the roles in the movie, or just that actor's role if `actor` is given
+- `400` - movieID or actor isn't a positive whole number
+- `401` / `403` - not signed in, or the token is wrong or expired
+- `404` - the movie doesn't exist, or that actor has no role in it
+
+#### GET /actors/{actorID}?[movie=movieID]
+Needs a signed-in user.
+- `200` - the actor's profile, plus `roleDescription` if they have a role in the given movie
+- `400` - actorID or movie isn't a positive whole number
+- `401` / `403` - not signed in, or the token is wrong or expired
+- `404` - the actor doesn't exist
+
+#### POST /movies/roles
+Needs the admin API key.
+
+Body: `{ "movieId": 1234, "actorId": 4325, "roleName": "...", "roleDescription": "..." }`
+- `201` - role added
+- `400` - the body isn't valid JSON, or a field is missing or the wrong type
+- `403` - no API key, or the wrong one
+- `404` - the movie or actor doesn't exist
+- `409` - that actor already has a role in that movie
+
+### Logging
+
+Every request is logged to CloudWatch with the Cognito username and the path, for example `userA   /movies/1234/roles?actor=4321`. The username comes from the authorizer, which passes it on to the lambdas. POST requests use the API key instead of a login, so they're logged as `admin`.
+
+### Design decisions
+
+- **Single table.** Movies, actors and roles are all in one DynamoDB table, using the `m#` / `a#` keys and the helper functions in `shared/model.ts`. Responses only return the model data (no `PK` / `SK`) inside `{ "data": ... }`.
+- **Getting one actor's role.** For `?actor=`, I query on both the partition key and the sort key, so DynamoDB returns just that role instead of me filtering the results afterwards.
+- **Adding a role safely.** Like the POST in Lab 5, I use a `TransactWriteCommand`. It checks the movie exists, checks the actor exists, and only adds the role if it isn't already there. If any check fails, nothing is written, and I use the reason to return a 404 or 409.
+- **Checking the request body.** Lab 5 used AJV for this. I wrote a small check function (`invalidRoleFields`) instead, in the same style as `parseBody` in `auth-utils.ts`, so I didn't need to add any new packages.
+- **Errors.** 500 errors are logged to CloudWatch, but the client only gets "Internal server error", so no internal details leak out.
+- **Pagination.** A DynamoDB Query only returns up to 1 MB at a time, so `queryAll` keeps fetching pages until it has everything.
