@@ -54,3 +54,14 @@ export const toActor = ({ actorId, name, dateOfBirth, bio }: Record<string, any>
 // Parses a path or query string ID; undefined if it isn't a positive integer.
 export const parseId = (value: string | undefined): number | undefined =>
   value !== undefined && /^[1-9]\d*$/.test(value) ? Number(value) : undefined;
+
+// Names the fields of a Role request body that are missing or have the wrong type.
+export const invalidRoleFields = (body: Record<string, unknown>): string[] => {
+  const ids = (['movieId', 'actorId'] as const).filter(
+    (field) => !Number.isInteger(body[field]) || (body[field] as number) < 1,
+  );
+  const texts = (['roleName', 'roleDescription'] as const).filter(
+    (field) => typeof body[field] !== 'string' || (body[field] as string).trim() === '',
+  );
+  return [...ids, ...texts];
+};
