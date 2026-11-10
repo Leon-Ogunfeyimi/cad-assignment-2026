@@ -1,12 +1,12 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
-import { QueryCommand, type QueryCommandInput } from "@aws-sdk/lib-dynamodb";
+import type { QueryCommandInput } from "@aws-sdk/lib-dynamodb";
 import {
   actorKey,
-  ddb,
   isMovieItem,
   isRoleItem,
   movieKey,
   parseId,
+  queryAll,
   tableName,
   toRole,
 } from "../shared/db";
@@ -49,8 +49,8 @@ export const handler = async (
   }
 
   try {
-    const queryResult = await ddb.send(new QueryCommand(queryInput));
-    const resultItems = queryResult.Items ?? [];
+    // queryAll reads every page, so large movies are never cut off at 1 MB.
+    const resultItems = await queryAll(queryInput);
 
     if (actorId !== undefined && resultItems.length === 0) {
       return response(404, {
